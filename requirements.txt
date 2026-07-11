@@ -1,0 +1,7 @@
+openeo
+xarray
+netCDF4
+numpy
+pandas
+matplotlib
+ipykernel
