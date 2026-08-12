@@ -7,7 +7,7 @@ def construct_df(
     candidate_ds: xr.Dataset,
 ) -> pd.DataFrame:
     """
-    Convert the candidate xarray dataset into a tabular CH4 dataset.
+    Convert the candidate xarray dataset into a tabular CH4 dataframe.
     """
     required_variables = {
         "CH4",

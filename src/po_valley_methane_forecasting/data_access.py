@@ -192,6 +192,36 @@ def load_xarray_dataset(
     return xr.load_dataset(dataset_path)
 
 
+def download_datacube_to_netcdf(
+    datacube: openeo.DataCube,
+    output_path: Path,
+) -> None:
+    """
+    Execute a small openEO data cube synchronously
+    and download the result as NetCDF.
+    """
+    output_path = Path(output_path)
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    if output_path.exists():
+        print(
+            f"File already available: "
+            f"{output_path.name} — skipping download."
+        )
+        return
+
+    datacube.download(
+        outputfile=output_path,
+        format="NetCDF",
+    )
+
+    print(f"Saved to: {output_path}")
+
+
 def save_xarray_dataset(
     dataset: xr.Dataset,
     output_path: Path,
