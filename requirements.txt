@@ -9,3 +9,5 @@ geopandas
 regionmask
 scikit-learn
 pyarrow
+pypdf
+ollama
