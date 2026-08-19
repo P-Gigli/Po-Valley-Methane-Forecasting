@@ -1,20 +1,35 @@
 from ollama import chat
 from textwrap import dedent
 
-def format_page_reference(
+def format_source_reference(
     chunk: dict,
 ) -> str:
     """
-    Format the page reference of a retrieved chunk.
+    Format the source reference of a retrieved chunk
     """
 
-    page_start = chunk["page_start"]
-    page_end = chunk["page_end"]
+    source_type = chunk.get(
+        "source_type"
+    )
 
-    if page_start == page_end:
-        return f"p. {page_start}"
+    if source_type == "pdf":
+        page_start = chunk["page_start"]
+        page_end = chunk["page_end"]
 
-    return f"pp. {page_start}-{page_end}"
+        if page_start == page_end:
+            return f"Pages: p. {page_start}"
+
+        return (
+            f"Pages: pp. "
+            f"{page_start}-{page_end}"
+        )
+
+    if source_type == "markdown":
+        return (
+            f"Section: {chunk['section']}"
+        )
+
+    return ""
 
 
 def build_context(
@@ -31,14 +46,14 @@ def build_context(
         retrieved_chunks,
         start=1,
     ):
-        page_reference = format_page_reference(
-            chunk
+        source_reference = (
+            format_source_reference(chunk)
         )
 
         context_part = (
             f"=== SOURCE [SRC_{i}] ===\n"
             f"Source: {chunk['source']}\n"
-            f"Pages: {page_reference}\n"
+            f"{source_reference}\n"
             f"Text:\n{chunk['text']}\n"
             f"=== END SOURCE [SRC_{i}] ==="
         )

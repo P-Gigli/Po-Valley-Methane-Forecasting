@@ -19,19 +19,23 @@ def load_embedding_model(
 def embed_chunks(
     chunks: list[dict],
     model: SentenceTransformer,
+    batch_size: int = 32,
 ):
     """
     Compute normalized embeddings for corpus chunks.
     """
 
     texts = [
-        chunk["text"]
+        chunk.get(
+            "embedding_text",
+            chunk["text"],
+        )
         for chunk in chunks
     ]
 
     return model.encode_document(
         texts,
-        batch_size=32,
+        batch_size=batch_size,
         show_progress_bar=True,
         convert_to_numpy=True,
         normalize_embeddings=True,

@@ -40,7 +40,7 @@ def extract_pdf_pages(
 
 
 REFERENCES_HEADING = re.compile(
-    r"^\s*(references|bibliography)\s*$",
+    r"^\s*(references(?:\s+and\s+notes)?|bibliography)\s*$",
     flags=re.IGNORECASE | re.MULTILINE,
 )
 
@@ -362,6 +362,83 @@ def clean_page_text(
     return text.strip()
 
 
+def extract_pdf_title(
+    pdf_path: Path,
+) -> str:
+    return (
+        Path(pdf_path)
+        .stem
+        .replace("_", " ")
+    )
+
+
+def extract_markdown_title(
+    md_path: Path,
+) -> str:
+    """
+    Extract the first level-1 Markdown heading.
+    """
+
+    text = Path(md_path).read_text(
+        encoding="utf-8"
+    )
+
+    match = re.search(
+        r"^\s*#\s+(.+?)\s*$",
+        text,
+        flags=re.MULTILINE,
+    )
+
+    if match:
+        return match.group(1).strip()
+
+    # Fallback if no level-1 heading is found.
+    return (
+        Path(md_path)
+        .stem
+        .replace("_", " ")
+        .strip()
+    )
+
+
+def extract_markdown_sections(
+    md_path: Path,
+) -> list[dict]:
+
+    text = Path(md_path).read_text(
+        encoding="utf-8"
+    )
+
+    heading_pattern = re.compile(
+        r"^##\s+(.+?)\s*$",
+        flags=re.MULTILINE,
+    )
+
+    matches = list(
+        heading_pattern.finditer(text)
+    )
+
+    sections = []
+
+    for i, match in enumerate(matches):
+        start = match.end()
+
+        if i + 1 < len(matches):
+            end = matches[i + 1].start()
+        else:
+            end = len(text)
+
+        section_text = text[start:end].strip()
+
+        if section_text:
+            sections.append({
+                "section": match.group(1).strip(),
+                "text": section_text,
+            })
+
+    return sections
+
+
 def chunk_text(
     text: str,
     max_chars: int = 1000,
@@ -452,6 +529,10 @@ def chunk_pdf(
 
     pages = remove_references_pages(pages)
 
+    document_title = extract_pdf_title(
+        pdf_path
+    )
+
     repeated_edge_patterns = (
         find_repeated_edge_lines(pages)
     )
@@ -521,11 +602,67 @@ def chunk_pdf(
 
         chunks.append({
             "source": Path(pdf_path).name,
+            "source_type": "pdf",
+            "document_title": document_title,
             "page_start": min(pages_in_chunk),
             "page_end": max(pages_in_chunk),
             "chunk_index": chunk_index,
             "text": chunk["text"],
+            "embedding_text": (
+                f"Document: {document_title}. "
+                f"{chunk['text']}"
+            ),
         })
+
+    return chunks
+
+
+def chunk_markdown(
+    md_path: Path,
+    max_chars: int = 1000,
+    overlap_sentences: int = 1,
+) -> list[dict]:
+    """
+    Extract and chunk a markdown file keeping track of
+    section provenance.
+    """
+
+    document_title = extract_markdown_title(
+        md_path
+    )
+
+    sections = extract_markdown_sections(
+        md_path
+    )
+
+    chunks = []
+    chunk_index = 0
+
+    for section in sections:
+        raw_chunks = chunk_text(
+            text=section["text"],
+            max_chars=max_chars,
+            overlap_sentences=overlap_sentences,
+        )
+
+        for chunk in raw_chunks:
+            text = chunk["text"]
+
+            chunks.append({
+                "source": Path(md_path).name,
+                "source_type": "markdown",
+                "document_title": document_title,
+                "section": section["section"],
+                "chunk_index": chunk_index,
+                "text": text,
+                "embedding_text": (
+                    f"Document: {document_title}. "
+                    f"Section: {section['section']}. "
+                    f"{text}"
+                ),
+            })
+
+            chunk_index += 1
 
     return chunks
 
@@ -536,7 +673,7 @@ def chunk_corpus(
     overlap_sentences: int = 1,
 ) -> list[dict]:
     """
-    Chunk all PDF documents contained recursively
+    Chunk all PDF documents and markdown files contained recursively
     in a directory.
     """
 
@@ -552,31 +689,52 @@ def chunk_corpus(
         documents_dir.rglob("*.pdf")
     )
 
-    if not pdf_paths:
+    md_paths = sorted(
+        documents_dir.rglob("*.md")
+    )
+
+    document_paths = [
+        *pdf_paths,
+        *md_paths,
+    ]
+
+    if not document_paths:
         raise ValueError(
-            f"No PDF files found in {documents_dir}"
+            f"No PDF or Markdown files found in {documents_dir}"
         )
 
     all_chunks = []
 
-    for pdf_path in pdf_paths:
-        document_chunks = chunk_pdf(
-            pdf_path=pdf_path,
-            max_chars=max_chars,
-            overlap_sentences=overlap_sentences,
-        )
+    for document_path in document_paths:
+
+        suffix = document_path.suffix.lower()
+
+        if suffix == ".pdf":
+            document_chunks = chunk_pdf(
+                document_path,
+                max_chars=max_chars,
+                overlap_sentences=overlap_sentences,
+            )
+
+        elif suffix == ".md":
+            document_chunks = chunk_markdown(
+                document_path,
+                max_chars=max_chars,
+                overlap_sentences=overlap_sentences,
+            )
+
+        else:
+            continue
 
         category = (
-            pdf_path.parent
+            document_path.parent
             .relative_to(documents_dir)
             .as_posix()
         )
 
         for chunk in document_chunks:
-            all_chunks.append({
-                "chunk_id": len(all_chunks),
-                "category": category,
-                **chunk,
-            })
+            chunk["category"] = category
+            chunk["chunk_id"] = len(all_chunks)
+            all_chunks.append(chunk)
 
     return all_chunks
